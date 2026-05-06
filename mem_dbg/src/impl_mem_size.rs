@@ -705,6 +705,11 @@ impl<T: FlatType> FlatType for core::cell::RefCell<T> {
 }
 
 impl<T: MemSize> MemSize for core::cell::RefCell<T> {
+    /// Returns `size_of::<Self>() + recursive(T)` when no mutable borrow is
+    /// active. If a mutable borrow is currently held, the inner `T` cannot
+    /// be observed, so this returns only `size_of::<Self>()` and silently
+    /// undercounts any heap reachable through `T`. The `MemDbg`
+    /// implementation surfaces this with a `<mutably borrowed>` marker.
     fn mem_size_rec(&self, flags: SizeFlags, refs: &mut HashMap<usize, usize>) -> usize {
         if let Ok(borrow) = self.try_borrow() {
             core::mem::size_of::<Self>() - core::mem::size_of::<T>()
@@ -721,6 +726,11 @@ impl<T: FlatType> FlatType for core::cell::Cell<T> {
 }
 
 impl<T: MemSize> MemSize for core::cell::Cell<T> {
+    /// `Cell<T>` is `!Sync`, so no concurrent mutation can occur, but a
+    /// reentrant call (e.g. a custom `MemSize` impl that mutates the same
+    /// cell mid-traversal) can race against the read of `T`'s contents.
+    /// The result is unspecified but never UB; for non-flat `T` callers
+    /// should avoid such reentrancy.
     fn mem_size_rec(&self, flags: SizeFlags, refs: &mut HashMap<usize, usize>) -> usize {
         // SAFETY: we temporarily take a shared reference to the inner value;
         // since &self exists, &mut self cannot exist.
@@ -748,6 +758,9 @@ impl<T: FlatType> FlatType for core::cell::UnsafeCell<T> {
 }
 
 impl<T: MemSize> MemSize for core::cell::UnsafeCell<T> {
+    /// Same reentrancy caveat as `Cell<T>`: if `T`'s `mem_size_rec` mutates
+    /// the cell through another `UnsafeCell::get()` during traversal, the
+    /// result is unspecified but never UB.
     fn mem_size_rec(&self, flags: SizeFlags, refs: &mut HashMap<usize, usize>) -> usize {
         // SAFETY: we temporarily take a shared reference to the inner value; no
         // concurrent mutation through UnsafeCell::get() can occur during the
