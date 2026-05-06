@@ -53,3 +53,40 @@ fn oncecell_empty_renders_only_self() {
     assert!(out.contains("OnceCell"));
     assert!(!out.contains("heavy"));
 }
+
+// ---------------------------------------------------------------------------
+// Bug 2: `Mutex<T>::_mem_dbg_rec_on` and `RwLock<T>::_mem_dbg_rec_on`
+// dispatched on the `MutexGuard<T>`/`RwLockReadGuard<T>` value, hitting the
+// guard's FOLLOW_REFS-gated impl and silently dropping children under
+// default flags - while `mem_size_rec` always recursed.
+// ---------------------------------------------------------------------------
+
+#[test]
+fn mutex_renders_inner_children_under_default_flags() {
+    use std::sync::Mutex;
+
+    let m = Mutex::new(Inner {
+        heavy: vec![0u8; 64],
+    });
+    let out = render(&m);
+    assert!(out.contains("Mutex"));
+    assert!(
+        out.contains("heavy"),
+        "Mutex did not recurse into Inner under default flags:\n{out}"
+    );
+}
+
+#[test]
+fn rwlock_renders_inner_children_under_default_flags() {
+    use std::sync::RwLock;
+
+    let r = RwLock::new(Inner {
+        heavy: vec![0u8; 64],
+    });
+    let out = render(&r);
+    assert!(out.contains("RwLock"));
+    assert!(
+        out.contains("heavy"),
+        "RwLock did not recurse into Inner under default flags:\n{out}"
+    );
+}
